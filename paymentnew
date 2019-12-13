@@ -1,0 +1,129 @@
+<?php    
+    $localhost="localhost";
+    $username="vedica_admission";
+    $password="vedica_admission";
+    $dbname="vedica_admn_2017";
+    $con=mysql_connect( $localhost ,$username,$password) or die("Could not connect");
+    mysql_select_db($dbname,$con)or die("Error is data base name error: ".mysql_error());
+
+    function studentDetail($scholar_number){
+        $query = "SELECT * FROM `student_detail_new` WHERE `application_id` = '".$scholar_number."'";
+	    $sql = mysql_query($query) or die("Error is: ".mysql_error());
+	    if(mysql_num_rows($sql) > 0){
+            $result = mysql_fetch_row($sql, MYSQL_ASSOC);
+            $data['responseType'] = 1;
+            $data['message'] = $result;
+        }else{
+            $data['responseType'] = 0;
+			$data['message'] = '';
+        }
+        return $data;
+    }
+
+    function aes128Encrypt($str,$key){
+        $block = mcrypt_get_block_size('rijndael_128', 'ecb');
+        $pad = $block - (strlen($str) % $block);
+        $str .= str_repeat(chr($pad), $pad);
+        return base64_encode(mcrypt_encrypt(MCRYPT_RIJNDAEL_128, $key, $str, MCRYPT_MODE_ECB));
+    }
+
+    function paymentUrl($data){
+        if(!empty($data['application_id']) && !empty($data['email_id']) && !empty($data['scholar_name']) && !empty($data['mobile_number']) && !empty($data['amount'])){
+            
+            $number = mt_rand( 10000000, 99999999); 
+            $application_id = "'".$data['application_id']."'";
+            $email = $data['email_id'];
+            ;
+            $iciciEmail = strstr($email,'@',true).'@icici';
+            $name = $data['scholar_name'];
+            $mobile = $data['mobile_number'];
+            $amount = $data['amount'];
+            $part1 = $number."|147847|".$amount."|".$mobile."|".$name."|".$application_id."|".$email."|".$iciciEmail;
+          
+            //$part2 = "https://www.vedicascholars.com";
+            $part2 = "https://www.vedicascholars.com/payment-thankyou/";
+            $part3 = $number;
+            $part4 = "147847";
+            $part5 = $amount;
+            $part6 = "9";
+            $key = "1615772446401001";
+            $penc1 = aes128Encrypt($part1,$key);
+            $penc2 = aes128Encrypt($part2,$key);
+            $penc3 = aes128Encrypt($part3,$key);
+            $penc4 = aes128Encrypt($part4,$key);
+            $penc5 = aes128Encrypt($part5,$key);
+            $penc6 = aes128Encrypt($part6,$key);
+            $temp['otip'] = $part1;
+            $temp['url'] =  "https://eazypay.icicibank.com/EazyPG?merchantid=164644&mandatory%20fields=".$penc1."&optional%20fields=".""."&returnurl=".$penc2."&Reference%20No=".$penc3."&submerchantid=".$penc4."&transaction%20amount=".$penc5."&paymode=".$penc6;
+            $temp['return'] = 1;
+
+         }else{
+            $temp['url'] =  '';
+            $temp['return'] = 0;
+        }
+        
+        return $temp;
+    }
+
+   /*$temp['application_id'] = 'VS2017000062';
+                $temp['email_id'] = 'architbakliwal@gmail.com';
+                $temp['scholar_name'] = 'Archit Bakliwal';
+                $temp['mobile_number'] = 9920383123;
+                $temp['amount'] = 200;
+    $url = paymentUrl($temp);
+                print_r($url);die('123');*/
+?>
+
+<?php
+
+    if(!empty($_REQUEST['submit']) && !empty($_REQUEST['scholar_number']) && !empty($_REQUEST['scholar_name']) && !empty($_REQUEST['amount'])){
+        $studentDetail = studentDetail($_REQUEST['scholar_number']);
+        
+        if(!empty($studentDetail['responseType'])){
+            $data['application_id'] = $_REQUEST['scholar_number'];
+            $data['scholar_name'] = $_REQUEST['scholar_name'];
+            $data['scholar_email'] = $studentDetail['message']['scholar_email'];
+            $data['mobile_number'] = $studentDetail['message']['scholar_mobile'];
+            $data['amount'] = $_REQUEST['amount'];
+            $data['time'] = date('Y-m-d H:i:s');
+            $data['status'] = 'Not Verified';
+            $key = array_keys($data);
+            $val = array_values($data);
+           $sql = "INSERT INTO `user_payment_detail` (".implode(', ', $key).")". "VALUES ('" . implode("', '", $val)."')";
+           //print_r($sql);die;
+          $result = mysql_query($sql) ;
+         // $result = 1;
+            if($result > 0){
+                $temp = array();
+                $temp['application_id'] = trim($_REQUEST['scholar_number']);
+                $temp['email_id'] = trim($studentDetail['message']['scholar_email']);
+                $temp['scholar_name'] = trim($_REQUEST['scholar_name']);
+                $temp['mobile_number'] = trim($studentDetail['message']['scholar_mobile']);
+                $temp['amount'] = trim($_REQUEST['amount']);
+                
+                $paymentUrl = paymentUrl($temp);
+             // print_r($paymentUrl);die('123456');
+                if(!empty($paymentUrl['return'])){
+                    $data['url'] = $paymentUrl['url'];
+                    $data['responseType'] = 'success';
+                    $data['message'] = 'Successfully insert';
+                    //print_r($data['url']);die('123');
+                }else{
+                    $data['responseType'] = 'fail';
+                    $data['message'] = 'Please try again!';   	
+                }
+            } else {
+                $data['responseType'] = 'fail';
+                $data['message'] = 'Please try again!';   		
+            }
+        }else{
+            $data['responseType'] = 'fail';
+            $data['message'] = 'Please try again!';   	
+        }
+    }else{
+        $data['responseType'] = 'fail';
+        $data['message'] = 'Please try again!';
+    }
+    print json_encode($data);
+	exit;
+?>
